@@ -425,15 +425,21 @@ impl SNARK {
     transcript.append_protocol_name(SNARK::protocol_name());
 
     let timer_sat_proof = Timer::new("verify_sat_proof");
-    assert_eq!(input.assignment.len(), comm.comm.get_num_inputs());
-    let (rx, ry) = self.r1cs_sat_proof.verify(
+    if input.assignment.len() != comm.comm.get_num_inputs() {
+      return Err(ProofVerifyError::InternalError);
+    }
+    let res = self.r1cs_sat_proof.verify(
       comm.comm.get_num_vars(),
       comm.comm.get_num_cons(),
       &input.assignment,
       &self.inst_evals,
       transcript,
       &gens.gens_r1cs_sat,
-    )?;
+    );
+    if !res.is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
+    let (rx, ry) = res.unwrap();
     timer_sat_proof.stop();
 
     let timer_eval_proof = Timer::new("verify_eval_proof");
@@ -441,20 +447,21 @@ impl SNARK {
     Ar.append_to_transcript(b"Ar_claim", transcript);
     Br.append_to_transcript(b"Br_claim", transcript);
     Cr.append_to_transcript(b"Cr_claim", transcript);
-    assert!(self
-      .r1cs_eval_proof
-      .verify(
-        &comm.comm,
-        &rx,
-        &ry,
-        &self.inst_evals,
-        &gens.gens_r1cs_eval,
-        transcript
-      )
-      .is_ok());
+
+    let result: Result<(), ProofVerifyError> = self
+        .r1cs_eval_proof
+        .verify(
+          &comm.comm,
+          &rx,
+          &ry,
+          &self.inst_evals,
+          &gens.gens_r1cs_eval,
+          transcript
+        );
+
     timer_eval_proof.stop();
     timer_verify.stop();
-    Ok(())
+    result
   }
 }
 

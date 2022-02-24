@@ -171,18 +171,17 @@ impl DerefsEvalProof {
     for i in (0..challenges.len()).rev() {
       poly_evals.bound_poly_var_bot(&challenges[i]);
     }
-    assert_eq!(poly_evals.len(), 1);
+    if poly_evals.len() != 1 {
+      return Err(ProofVerifyError::InternalError);
+    }
     let joint_claim_eval = poly_evals[0];
     let mut r_joint = challenges;
     r_joint.extend(r);
 
     // decommit the joint polynomial at r_joint
     joint_claim_eval.append_to_transcript(b"joint_claim_eval", transcript);
-    assert!(proof
-      .verify_plain(gens, transcript, &r_joint, &joint_claim_eval, comm)
-      .is_ok());
 
-    Ok(())
+    proof.verify_plain(gens, transcript, &r_joint, &joint_claim_eval, comm)
   }
 
   // verify evaluations of both polynomials at r
@@ -200,7 +199,7 @@ impl DerefsEvalProof {
     evals.extend(eval_col_ops_val_vec);
     evals.resize(evals.len().next_power_of_two(), Scalar::zero());
 
-    assert!(DerefsEvalProof::verify_single(
+    DerefsEvalProof::verify_single(
       &self.proof_derefs,
       &comm.comm_ops_val,
       r,
@@ -208,9 +207,6 @@ impl DerefsEvalProof {
       gens,
       transcript,
     )
-    .is_ok());
-
-    Ok(())
   }
 }
 
@@ -860,13 +856,17 @@ impl HashLayerProof {
     let eval_init_val = EqPolynomial::new(r.to_vec()).evaluate(rand_mem);
     let hash_init_at_rand_mem =
       hash_func(&eval_init_addr, &eval_init_val, &Scalar::zero()) - r_multiset_check; // verify the claim_last of init chunk
-    assert_eq!(&hash_init_at_rand_mem, claim_init);
+    if &hash_init_at_rand_mem != claim_init {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     // read
     for i in 0..eval_ops_addr.len() {
       let hash_read_at_rand_ops =
         hash_func(&eval_ops_addr[i], &eval_ops_val[i], &eval_read_ts[i]) - r_multiset_check; // verify the claim_last of init chunk
-      assert_eq!(&hash_read_at_rand_ops, &claim_read[i]);
+      if &hash_read_at_rand_ops != &claim_read[i] {
+        return Err(ProofVerifyError::InternalError);
+      }
     }
 
     // write: shares addr, val component; only decommit write_ts
@@ -874,7 +874,9 @@ impl HashLayerProof {
       let eval_write_ts = eval_read_ts[i] + Scalar::one();
       let hash_write_at_rand_ops =
         hash_func(&eval_ops_addr[i], &eval_ops_val[i], &eval_write_ts) - r_multiset_check; // verify the claim_last of init chunk
-      assert_eq!(&hash_write_at_rand_ops, &claim_write[i]);
+      if &hash_write_at_rand_ops != &claim_write[i] {
+        return Err(ProofVerifyError::InternalError);
+      }
     }
 
     // audit: shares addr and val with init
@@ -882,7 +884,10 @@ impl HashLayerProof {
     let eval_audit_val = eval_init_val;
     let hash_audit_at_rand_mem =
       hash_func(&eval_audit_addr, &eval_audit_val, eval_audit_ts) - r_multiset_check;
-    assert_eq!(&hash_audit_at_rand_mem, claim_audit); // verify the last step of the sum-check for audit
+    // verify the last step of the sum-check for audit
+    if &hash_audit_at_rand_mem != claim_audit {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     Ok(())
   }
@@ -909,8 +914,10 @@ impl HashLayerProof {
 
     // verify derefs at rand_ops
     let (eval_row_ops_val, eval_col_ops_val) = &self.eval_derefs;
-    assert_eq!(eval_row_ops_val.len(), eval_col_ops_val.len());
-    assert!(self
+    if eval_row_ops_val.len() != eval_col_ops_val.len() {
+      return Err(ProofVerifyError::InternalError);
+    }
+    if !self
       .proof_derefs
       .verify(
         rand_ops,
@@ -920,19 +927,25 @@ impl HashLayerProof {
         comm_derefs,
         transcript
       )
-      .is_ok());
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     // verify the decommitments used in evaluation sum-check
     let eval_val_vec = &self.eval_val;
-    assert_eq!(claims_dotp.len(), 3 * eval_row_ops_val.len());
+    if claims_dotp.len() != 3 * eval_row_ops_val.len() {
+      return Err(ProofVerifyError::InternalError);
+    }
     for i in 0..claims_dotp.len() / 3 {
       let claim_row_ops_val = claims_dotp[3 * i];
       let claim_col_ops_val = claims_dotp[3 * i + 1];
       let claim_val = claims_dotp[3 * i + 2];
 
-      assert_eq!(claim_row_ops_val, eval_row_ops_val[i]);
-      assert_eq!(claim_col_ops_val, eval_col_ops_val[i]);
-      assert_eq!(claim_val, eval_val_vec[i]);
+      if claim_row_ops_val != eval_row_ops_val[i]
+          || claim_col_ops_val != eval_col_ops_val[i]
+          || claim_val != eval_val_vec[i] {
+        return Err(ProofVerifyError::InternalError);
+      }
     }
 
     // verify addr-timestamps using comm_comb_ops at rand_ops
@@ -956,12 +969,14 @@ impl HashLayerProof {
     for i in (0..challenges_ops.len()).rev() {
       poly_evals_ops.bound_poly_var_bot(&challenges_ops[i]);
     }
-    assert_eq!(poly_evals_ops.len(), 1);
+    if poly_evals_ops.len() != 1 {
+      return Err(ProofVerifyError::InternalError);
+    }
     let joint_claim_eval_ops = poly_evals_ops[0];
     let mut r_joint_ops = challenges_ops;
     r_joint_ops.extend(rand_ops);
     joint_claim_eval_ops.append_to_transcript(b"joint_claim_eval_ops", transcript);
-    assert!(self
+    if !self
       .proof_ops
       .verify_plain(
         &gens.gens_ops,
@@ -970,7 +985,9 @@ impl HashLayerProof {
         &joint_claim_eval_ops,
         &comm.comm_comb_ops
       )
-      .is_ok());
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     // verify proof-mem using comm_comb_mem at rand_mem
     // form a single decommitment using comb_comb_mem at rand_mem
@@ -985,12 +1002,14 @@ impl HashLayerProof {
     for i in (0..challenges_mem.len()).rev() {
       poly_evals_mem.bound_poly_var_bot(&challenges_mem[i]);
     }
-    assert_eq!(poly_evals_mem.len(), 1);
+    if poly_evals_mem.len() != 1 {
+      return Err(ProofVerifyError::InternalError);
+    }
     let joint_claim_eval_mem = poly_evals_mem[0];
     let mut r_joint_mem = challenges_mem;
     r_joint_mem.extend(rand_mem);
     joint_claim_eval_mem.append_to_transcript(b"joint_claim_eval_mem", transcript);
-    assert!(self
+    if !self
       .proof_mem
       .verify_plain(
         &gens.gens_mem,
@@ -999,11 +1018,13 @@ impl HashLayerProof {
         &joint_claim_eval_mem,
         &comm.comm_comb_mem
       )
-      .is_ok());
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     // verify the claims from the product layer
     let (eval_ops_addr, eval_read_ts, eval_audit_ts) = &self.eval_row;
-    assert!(HashLayerProof::verify_helper(
+    if !HashLayerProof::verify_helper(
       &(rand_mem, rand_ops),
       claims_row,
       eval_row_ops_val,
@@ -1014,10 +1035,12 @@ impl HashLayerProof {
       r_hash,
       r_multiset_check,
     )
-    .is_ok());
+    .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     let (eval_ops_addr, eval_read_ts, eval_audit_ts) = &self.eval_col;
-    assert!(HashLayerProof::verify_helper(
+    if !HashLayerProof::verify_helper(
       &(rand_mem, rand_ops),
       claims_col,
       eval_col_ops_val,
@@ -1028,7 +1051,9 @@ impl HashLayerProof {
       r_hash,
       r_multiset_check,
     )
-    .is_ok());
+    .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     timer.stop();
     Ok(())
@@ -1392,21 +1417,26 @@ impl PolyEvalNetworkProof {
 
     let num_ops = nz.next_power_of_two();
     let num_cells = rx.len().pow2();
-    assert_eq!(rx.len(), ry.len());
+    if rx.len() != ry.len() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     let (claims_mem, rand_mem, mut claims_ops, claims_dotp, rand_ops) = self
       .proof_prod_layer
       .verify(num_ops, num_cells, evals, transcript)?;
-    assert_eq!(claims_mem.len(), 4);
-    assert_eq!(claims_ops.len(), 4 * num_instances);
-    assert_eq!(claims_dotp.len(), 3 * num_instances);
+
+    if claims_mem.len() != 4
+        || claims_ops.len() != 4 * num_instances
+        ||claims_dotp.len() != 3 * num_instances {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     let (claims_ops_row, claims_ops_col) = claims_ops.split_at_mut(2 * num_instances);
     let (claims_ops_row_read, claims_ops_row_write) = claims_ops_row.split_at_mut(num_instances);
     let (claims_ops_col_read, claims_ops_col_write) = claims_ops_col.split_at_mut(num_instances);
 
     // verify the proof of hash layer
-    assert!(self
+    let result: Result<(), ProofVerifyError> = self
       .proof_hash_layer
       .verify(
         (&rand_mem, &rand_ops),
@@ -1431,11 +1461,11 @@ impl PolyEvalNetworkProof {
         r_hash,
         r_multiset_check,
         transcript
-      )
-      .is_ok());
+      );
+
     timer.stop();
 
-    Ok(())
+    result
   }
 }
 
@@ -1552,7 +1582,9 @@ impl SparseMatPolyEvalProof {
     let (rx_ext, ry_ext) = SparseMatPolyEvalProof::equalize(rx, ry);
 
     let (nz, num_mem_cells) = (comm.num_ops, comm.num_mem_cells);
-    assert_eq!(rx_ext.len().pow2(), num_mem_cells);
+    if rx_ext.len().pow2() != num_mem_cells {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     // add claims to transcript and obtain challenges for randomized mem-check circuit
     self
@@ -1562,7 +1594,7 @@ impl SparseMatPolyEvalProof {
     // produce a random element from the transcript for hash function
     let r_mem_check = transcript.challenge_vector(b"challenge_r_hash", 2);
 
-    assert!(self
+    self
       .poly_eval_network_proof
       .verify(
         comm,
@@ -1575,9 +1607,6 @@ impl SparseMatPolyEvalProof {
         nz,
         transcript,
       )
-      .is_ok());
-
-    Ok(())
   }
 }
 

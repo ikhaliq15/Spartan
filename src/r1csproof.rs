@@ -382,10 +382,13 @@ impl R1CSProof {
     let (comm_Az_claim, comm_Bz_claim, comm_Cz_claim, comm_prod_Az_Bz_claims) = &self.claims_phase2;
     let (pok_Cz_claim, proof_prod) = &self.pok_claims_phase2;
 
-    assert!(pok_Cz_claim
+    if !pok_Cz_claim
       .verify(&gens.gens_sc.gens_1, transcript, comm_Cz_claim)
-      .is_ok());
-    assert!(proof_prod
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
+
+    if !proof_prod
       .verify(
         &gens.gens_sc.gens_1,
         transcript,
@@ -393,7 +396,9 @@ impl R1CSProof {
         comm_Bz_claim,
         comm_prod_Az_Bz_claims
       )
-      .is_ok());
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     comm_Az_claim.append_to_transcript(b"comm_Az_claim", transcript);
     comm_Bz_claim.append_to_transcript(b"comm_Bz_claim", transcript);
@@ -408,7 +413,7 @@ impl R1CSProof {
     .compress();
 
     // verify proof that expected_claim_post_phase1 == claim_post_phase1
-    assert!(self
+    if !self
       .proof_eq_sc_phase1
       .verify(
         &gens.gens_sc.gens_1,
@@ -416,7 +421,9 @@ impl R1CSProof {
         &expected_claim_post_phase1,
         &comm_claim_post_phase1,
       )
-      .is_ok());
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     // derive three public challenges and then derive a joint claim
     let r_A = transcript.challenge_scalar(b"challenege_Az");
@@ -437,17 +444,21 @@ impl R1CSProof {
     .compress();
 
     // verify the joint claim with a sum-check protocol
-    let (comm_claim_post_phase2, ry) = self.sc_proof_phase2.verify(
+    let result= self.sc_proof_phase2.verify(
       &comm_claim_phase2,
       num_rounds_y,
       2,
       &gens.gens_sc.gens_1,
       &gens.gens_sc.gens_3,
       transcript,
-    )?;
+    );
+    if !result.is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
+    let (comm_claim_post_phase2, ry) = result.unwrap();
 
     // verify Z(ry) proof against the initial commitment
-    assert!(self
+    if !self
       .proof_eval_vars_at_ry
       .verify(
         &gens.gens_pc,
@@ -456,7 +467,9 @@ impl R1CSProof {
         &self.comm_vars_at_ry,
         &self.comm_vars
       )
-      .is_ok());
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     let poly_input_eval = {
       // constant term
@@ -484,7 +497,7 @@ impl R1CSProof {
     let expected_claim_post_phase2 =
       ((r_A * eval_A_r + r_B * eval_B_r + r_C * eval_C_r) * comm_eval_Z_at_ry).compress();
     // verify proof that expected_claim_post_phase1 == claim_post_phase1
-    assert!(self
+    if !self
       .proof_eq_sc_phase2
       .verify(
         &gens.gens_sc.gens_1,
@@ -492,7 +505,9 @@ impl R1CSProof {
         &expected_claim_post_phase2,
         &comm_claim_post_phase2,
       )
-      .is_ok());
+      .is_ok() {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     Ok((rx, ry))
   }

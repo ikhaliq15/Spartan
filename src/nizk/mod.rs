@@ -520,8 +520,9 @@ impl DotProductProofLog {
     Cx: &CompressedGroup,
     Cy: &CompressedGroup,
   ) -> Result<(), ProofVerifyError> {
-    assert_eq!(gens.n, n);
-    assert_eq!(a.len(), n);
+    if gens.n != n || a.len() != n {
+      return Err(ProofVerifyError::InternalError);
+    }
 
     transcript.append_protocol_name(DotProductProofLog::protocol_name());
     Cx.append_to_transcript(b"Cx", transcript);
@@ -548,13 +549,11 @@ impl DotProductProofLog {
     let lhs = ((Gamma_hat * c_s + beta_s) * a_hat_s + delta_s).compress();
     let rhs = ((g_hat + gens.gens_1.G[0] * a_hat_s) * z1_s + gens.gens_1.h * z2_s).compress();
 
-    assert_eq!(lhs, rhs);
-
-    if lhs == rhs {
-      Ok(())
-    } else {
-      Err(ProofVerifyError::InternalError)
+    if lhs != rhs {
+      return Err(ProofVerifyError::InternalError);
     }
+
+    Ok(())
   }
 }
 
